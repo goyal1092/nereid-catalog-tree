@@ -17,6 +17,8 @@ from trytond.model import ModelView, ModelSQL, fields
 from trytond.exceptions import UserError
 from trytond.pool import Pool, PoolMeta
 from trytond.pyson import Eval
+from trytond import backend
+from trytond.transaction import Transaction
 
 __all__ = [
     'Product', 'Node', 'ProductNodeRelationship',
@@ -45,7 +47,8 @@ class Node(ModelSQL, ModelView):
 
     name = fields.Char('Name', required=True, select=True, translate=True)
     slug = fields.Char(
-        'Slug', depends=['name'], required=True, select=True, translate=True
+        'Slug', depends=['name'], select=True, translate=True,
+        states={"required": Eval('type_') == 'catalog'}
     )
     type_ = fields.Selection([
         ('catalog', 'Catalog'),
@@ -80,6 +83,15 @@ class Node(ModelSQL, ModelView):
     def __setup__(cls):
         super(Node, cls).__setup__()
         cls._order.insert(0, ('sequence', 'ASC'))
+
+    @classmethod
+    def __register__(cls, module_name):
+
+        TableHandler = backend.get('TableHandler')
+        super(Node, cls).__register__(module_name)
+        table = TableHandler(Transaction().cursor, cls, module_name)
+
+        table.not_null_action('slug', action='remove')
 
     @classmethod
     def validate(cls, nodes):
@@ -207,7 +219,6 @@ class ProductNodeRelationship(ModelSQL):
     )
     node = fields.Many2One(
         'product.tree_node', 'Node',
-        domain=[('type_', '=', 'catalog')],
         ondelete='CASCADE', select=True, required=True
     )
 
@@ -235,7 +246,7 @@ class Website:
         "product.tree_node", 'Root Tree Node', select=True, states={
             "required": Eval('root_navigation_model') == 'product.tree_node',
             "invisible": Eval('root_navigation_model') != 'product.tree_node',
-        }
+        }, domain=[('type_', '=', 'catalog')]
     )
 
     @classmethod
